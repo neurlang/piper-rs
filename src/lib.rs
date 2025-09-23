@@ -1,4 +1,3 @@
-use espeak_rs::text_to_phonemes;
 use ndarray::Axis;
 use ndarray::{Array, Array1, Array2, ArrayView, Dim, IxDynImpl};
 use ort::session::{Session, SessionInputValue, SessionInputs, SessionOutputs};
@@ -23,6 +22,58 @@ const MAX_CHUNK_SIZE: usize = 1024;
 const BOS: char = '^';
 const EOS: char = '$';
 const PAD: char = '_';
+
+/////////////////////////
+
+pub type PhonemizerResult<T> = Result<T, PhonemizerError>;
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum PhonemizerError {
+    #[error("Espeak error: {0}")]
+    Espeak(#[from] espeak_rs::ESpeakError),
+
+    #[error("Rustruut error: {0}")]
+    Rustruut(#[from] rustruut::usecases::rustruut::RustruutError),
+}
+
+pub fn text_to_phonemes(
+    phonemizer_type: &str,
+    text: &str,
+    language: &str,
+    phoneme_separator: Option<char>,
+    remove_lang_switch_flags: bool,
+    remove_stress: bool,
+) -> PhonemizerResult<Vec<std::string::String>> {
+    match phonemizer_type {
+        "espeak" => {
+            let val = espeak_rs::text_to_phonemes(text, language, phoneme_separator, remove_lang_switch_flags, remove_stress);
+            //println!("{}", val.clone()?.join(" "));
+            return Ok(val?)
+        },
+        "rustruut" => {
+            let di = rustruut::DependencyInjection::new();
+            let phonemizer = rustruut::Phonemizer::new(di);
+
+            let req = rustruut::models::requests::PhonemizeSentence {
+                ipa_flavors: Vec::new(),
+                language: language.to_string(),
+                languages: Vec::new(),
+                sentence: text.to_string(),
+                is_reverse: false,
+                split_sentences: false,
+            };
+            let v = phonemizer.sentence(req)?.words.iter().map(|w| w.phonetic.clone()).collect::<Vec<String>>();
+            //println!("{}", v.join(" "));
+            return Ok(v);
+        },
+        &_ => todo!()
+    }
+}
+
+////////////////////////////
+
 
 #[inline(always)]
 fn reversed_mapping<K, V>(input: &HashMap<K, V>) -> HashMap<V, K>
@@ -137,6 +188,7 @@ pub struct ModelConfig {
     streaming: Option<bool>,
     espeak: ESpeakConfig,
     inference: InferenceConfig,
+    phoneme_type: String,
     #[allow(dead_code)]
     num_symbols: u32,
     #[allow(dead_code)]
@@ -233,7 +285,7 @@ trait VitsModelCommons {
     fn do_phonemize_text(&self, text: &str) -> PiperResult<Phonemes> {
         let config = self.get_config();
         let text = Cow::from(text);
-        let phonemes = match text_to_phonemes(&text, &config.espeak.voice, None, true, false) {
+        let phonemes = match text_to_phonemes(&config.phoneme_type, &text, &config.espeak.voice, None, true, false) {
             Ok(ph) => ph,
             Err(e) => {
                 return Err(PiperError::PhonemizationError(format!(
