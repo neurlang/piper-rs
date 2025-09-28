@@ -52,7 +52,7 @@ pub fn text_to_phonemes(
             //println!("{}", val.clone()?.join(" "));
             return Ok(val?)
         },
-        "rustruut" => {
+        "rustruut" | "pygoruut" => {
             let di = rustruut::DependencyInjection::new();
             let phonemizer = rustruut::Phonemizer::new(di);
 
@@ -64,7 +64,7 @@ pub fn text_to_phonemes(
                 is_reverse: false,
                 split_sentences: false,
             };
-            let v = phonemizer.sentence(req)?.words.iter().map(|w| w.phonetic.clone()).collect::<Vec<String>>();
+            let v = phonemizer.sentence(req)?.words.iter().map(|w| format!("{}{}{}", w.pre_punct, w.phonetic, w.post_punct)).collect::<Vec<String>>();
             //println!("{}", v.join(" "));
             return Ok(v);
         },
