@@ -276,7 +276,6 @@ trait VitsModelCommons {
         for phoneme in phonemes.chars() {
             if let Some(id) = config.phoneme_id_map.get(&phoneme) {
                 phoneme_ids.push(*id.first().unwrap());
-            } else {
                 phoneme_ids.push(pad_id);
             }
         }
