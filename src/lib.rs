@@ -64,9 +64,24 @@ pub fn text_to_phonemes(
                 is_reverse: false,
                 split_sentences: false,
             };
-            let v = phonemizer.sentence(req)?.words.iter().map(|w| format!("{}{}{}", w.pre_punct, w.phonetic, w.post_punct)).collect::<Vec<String>>();
-            //println!("{}", v.join(" "));
-            return Ok(v);
+            let mut sentences = Vec::new();
+            let mut current_sentence = Vec::new();
+
+            for word in phonemizer.sentence(req)?.words.iter() {
+                current_sentence.push(format!("{}{}{}", word.pre_punct, word.phonetic, word.post_punct));
+
+                if word.is_last {
+                    sentences.push(current_sentence.join(" "));
+                    current_sentence = Vec::new();
+                }
+            }
+
+            // Handle case where the last word wasn't marked as is_last
+            if !current_sentence.is_empty() {
+                sentences.push(current_sentence.join(" "));
+            }
+            //println!("{}", sentences.join(" "));
+            return Ok(sentences);
         },
         &_ => todo!()
     }
