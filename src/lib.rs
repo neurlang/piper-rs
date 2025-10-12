@@ -17,6 +17,9 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
 const MIN_CHUNK_SIZE: isize = 44;
 const MAX_CHUNK_SIZE: usize = 1024;
 const BOS: char = '^';
@@ -38,6 +41,13 @@ pub enum PhonemizerError {
     Rustruut(#[from] rustruut::usecases::rustruut::RustruutError),
 }
 
+// ---- Global registry of closures ----
+static GLOBAL_PHONEMIZERS: Lazy<
+    Mutex<HashMap<String, Box<dyn Fn(rustruut::models::requests::PhonemizeSentence) -> Result<rustruut::models::responses::PhonemizeSentence, rustruut::usecases::rustruut::RustruutError> + Send + Sync>>>
+> = Lazy::new(|| {
+    Mutex::new(HashMap::new())
+});
+
 pub fn text_to_phonemes(
     phonemizer_type: &str,
     text: &str,
@@ -45,6 +55,7 @@ pub fn text_to_phonemes(
     phoneme_separator: Option<char>,
     remove_lang_switch_flags: bool,
     remove_stress: bool,
+    version: Option<String>,
 ) -> PhonemizerResult<Vec<std::string::String>> {
     match phonemizer_type {
         "espeak" => {
@@ -53,8 +64,14 @@ pub fn text_to_phonemes(
             return Ok(val?)
         },
         "rustruut" | "pygoruut" => {
-            let di = rustruut::DependencyInjection::new();
-            let phonemizer = rustruut::Phonemizer::new(di);
+            let mut map = GLOBAL_PHONEMIZERS.lock().unwrap();
+            let phonemizer_sentence = map.entry(version.unwrap_or("".to_string()).to_string().into())
+                .or_insert_with(|| {
+                    let di = rustruut::DependencyInjection::new();
+                    let phonemizer = rustruut::Phonemizer::new(di);
+                    Box::new(move |req| phonemizer.sentence(req))
+                        as Box<dyn Fn(rustruut::models::requests::PhonemizeSentence) -> Result<rustruut::models::responses::PhonemizeSentence, rustruut::usecases::rustruut::RustruutError> + Send + Sync>
+                });
 
             let req = rustruut::models::requests::PhonemizeSentence {
                 ipa_flavors: Vec::new(),
@@ -67,7 +84,7 @@ pub fn text_to_phonemes(
             let mut sentences = Vec::new();
             let mut current_sentence = Vec::new();
 
-            for word in phonemizer.sentence(req)?.words.iter() {
+            for word in phonemizer_sentence(req)?.words.iter() {
                 current_sentence.push(format!("{}{}{}", word.pre_punct, word.phonetic, word.post_punct));
 
                 if word.is_last {
@@ -209,6 +226,7 @@ pub struct ModelConfig {
     #[allow(dead_code)]
     phoneme_map: HashMap<i64, char>,
     phoneme_id_map: HashMap<char, Vec<i64>>,
+    pygoruut_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -300,7 +318,7 @@ trait VitsModelCommons {
     fn do_phonemize_text(&self, text: &str) -> PiperResult<Phonemes> {
         let config = self.get_config();
         let text = Cow::from(text);
-        let phonemes = match text_to_phonemes(&config.phoneme_type, &text, &config.espeak.voice, None, true, false) {
+        let phonemes = match text_to_phonemes(&config.phoneme_type, &text, &config.espeak.voice, None, true, false, config.pygoruut_version.clone()) {
             Ok(ph) => ph,
             Err(e) => {
                 return Err(PiperError::PhonemizationError(format!(

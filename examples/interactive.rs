@@ -3,10 +3,14 @@ use rodio::buffer::SamplesBuffer;
 use std::io::{self, BufRead};
 use std::path::Path;
 
+use std::fs::OpenOptions;
+use std::io::{Write};
+
 fn main() {
-    // args: <config_path> [speaker_id]
+    // args: <config_path> [speaker_id] [sink device]
     let config_path = std::env::args().nth(1).expect("Please specify config path");
     let sid = std::env::args().nth(2);
+    let output_path = std::env::args().nth(3).unwrap_or("".to_string()).to_string();
 
     // Load model/config (same as your original)
     let model = piper_rs::from_config_path(Path::new(&config_path)).unwrap();
@@ -26,6 +30,7 @@ fn main() {
 
     // Read stdin line-by-line; each non-empty line is synthesized and played
     let stdin = io::stdin();
+    let empty = output_path.is_empty();
     for line_res in stdin.lock().lines() {
         match line_res {
             Ok(line) => {
@@ -33,6 +38,8 @@ fn main() {
                 if text.is_empty() {
                     continue;
                 }
+
+		println!("Synthesizing...");
 
                 // Synthesize the line (same call you had)
                 let audio = match synth.synthesize_parallel(text, None) {
@@ -54,13 +61,45 @@ fn main() {
                     }
                 }
 
+
+                // if there is pipe file path
+                if !empty {
+
+		  // Open FIFO for writing
+                  let mut pipe = match OpenOptions::new()
+		        .write(true)
+		        .open(&output_path) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        eprintln!("Piping error: {e}");
+                        continue;
+                    }
+                  };
+
+		  // Convert f32 -> i16 and write
+		  for &s in &samples {
+		    let s16 = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                    match pipe.write_all(&s16.to_le_bytes()) {
+                        Ok(a) => a,
+                        Err(e) => {
+                            eprintln!("Funneling error: {e}");
+                            break;
+                        }
+                    };
+		  }
+                }
+
+
                 // Create a sink, append buffer and block until finished
                 // NOTE: sample rate is the same hard-coded value you used before (22050).
                 // If your model uses a different sample rate, change this to match.
                 let sink = rodio::Sink::try_new(&handle).expect("Failed to create sink");
                 let buf = SamplesBuffer::new(1, 22050, samples);
                 sink.append(buf);
+		println!("Speaking...");
                 sink.sleep_until_end();
+		println!("Ready again.");
+
             }
             Err(e) => {
                 eprintln!("Error reading stdin: {e}");
