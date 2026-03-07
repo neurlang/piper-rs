@@ -75,45 +75,54 @@ impl AudioOutputConfig {
         if input_len == 0 {
             return Ok(samples.into());
         }
-        let mut out_buf: Vec<f32> = Vec::new();
-        unsafe {
-            let stream = sonic_rs_sys::sonicCreateStream(sample_rate as i32, num_channels as i32);
-            if let Some(rate) = self.rate {
-                sonic_rs_sys::sonicSetSpeed(
+        #[cfg(feature = "sonic")]
+        {
+            let mut out_buf: Vec<f32> = Vec::new();
+            unsafe {
+                let stream =
+                    sonic_rs_sys::sonicCreateStream(sample_rate as i32, num_channels as i32);
+                if let Some(rate) = self.rate {
+                    sonic_rs_sys::sonicSetSpeed(
+                        stream,
+                        percent_to_param(rate, RATE_RANGE.0, RATE_RANGE.1),
+                    );
+                }
+                if let Some(volume) = self.volume {
+                    sonic_rs_sys::sonicSetVolume(
+                        stream,
+                        percent_to_param(volume, VOLUME_RANGE.0, VOLUME_RANGE.1),
+                    );
+                }
+                if let Some(pitch) = self.pitch {
+                    sonic_rs_sys::sonicSetPitch(
+                        stream,
+                        percent_to_param(pitch, PITCH_RANGE.0, PITCH_RANGE.1),
+                    );
+                }
+                sonic_rs_sys::sonicWriteFloatToStream(stream, samples.as_ptr(), input_len as i32);
+                sonic_rs_sys::sonicFlushStream(stream);
+                let num_samples = sonic_rs_sys::sonicSamplesAvailable(stream);
+                if num_samples <= 0 {
+                    return Err(
+                        PiperError::OperationError("Sonic Error: failed to apply audio config. Invalid parameter value for rate, volume, or pitch".to_string())
+                    );
+                }
+                out_buf.reserve_exact(num_samples as usize);
+                sonic_rs_sys::sonicReadFloatFromStream(
                     stream,
-                    percent_to_param(rate, RATE_RANGE.0, RATE_RANGE.1),
+                    out_buf.spare_capacity_mut().as_mut_ptr().cast(),
+                    num_samples,
                 );
+                sonic_rs_sys::sonicDestroyStream(stream);
+                out_buf.set_len(num_samples as usize);
             }
-            if let Some(volume) = self.volume {
-                sonic_rs_sys::sonicSetVolume(
-                    stream,
-                    percent_to_param(volume, VOLUME_RANGE.0, VOLUME_RANGE.1),
-                );
-            }
-            if let Some(pitch) = self.pitch {
-                sonic_rs_sys::sonicSetPitch(
-                    stream,
-                    percent_to_param(pitch, PITCH_RANGE.0, PITCH_RANGE.1),
-                );
-            }
-            sonic_rs_sys::sonicWriteFloatToStream(stream, samples.as_ptr(), input_len as i32);
-            sonic_rs_sys::sonicFlushStream(stream);
-            let num_samples = sonic_rs_sys::sonicSamplesAvailable(stream);
-            if num_samples <= 0 {
-                return Err(
-                    PiperError::OperationError("Sonic Error: failed to apply audio config. Invalid parameter value for rate, volume, or pitch".to_string())
-                );
-            }
-            out_buf.reserve_exact(num_samples as usize);
-            sonic_rs_sys::sonicReadFloatFromStream(
-                stream,
-                out_buf.spare_capacity_mut().as_mut_ptr().cast(),
-                num_samples,
-            );
-            sonic_rs_sys::sonicDestroyStream(stream);
-            out_buf.set_len(num_samples as usize);
+            Ok(out_buf.into())
         }
-        Ok(out_buf.into())
+        #[cfg(not(feature = "sonic"))]
+        {
+            // Return raw samples unchanged when Sonic is disabled
+            Ok(samples.into())
+        }
     }
     #[inline(always)]
     fn generate_silence(
