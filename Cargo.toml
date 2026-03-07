@@ -12,7 +12,7 @@ repository = "https://github.com/thewh1teagle/piper-rs"
 
 [dependencies]
 # Local crates
-espeak-rs = { path = "crates/espeak-rs", version = "0.1.9", default-features = false }
+espeak-rs = { path = "crates/espeak-rs", version = "0.1.9", default-features = false, optional = true }
 sonic-rs-sys = { path = "crates/sonic-rs-sys", version = "0.1.9" }
 
 ndarray = "0.16.1"
@@ -30,5 +30,6 @@ rustruut = "0.0.5"
 rodio = "0.19.0"
 
 [features]
-default = ["compile-espeak-intonations"]
+default = []
+espeak = ["espeak-rs"]
 compile-espeak-intonations = ["espeak-rs/compile-espeak-intonations"]

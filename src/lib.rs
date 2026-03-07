@@ -34,8 +34,13 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PhonemizerError {
+
+    #[cfg(feature = "espeak")]
     #[error("Espeak error: {0}")]
     Espeak(#[from] espeak_rs::ESpeakError),
+
+    #[error("eSpeak not available")]
+    EspeakMissing,
 
     #[error("Rustruut error: {0}")]
     Rustruut(#[from] rustruut::usecases::rustruut::RustruutError),
@@ -59,9 +64,13 @@ pub fn text_to_phonemes(
 ) -> PhonemizerResult<Vec<std::string::String>> {
     match phonemizer_type {
         "espeak" => {
-            let val = espeak_rs::text_to_phonemes(text, language, phoneme_separator, remove_lang_switch_flags, remove_stress);
-            //println!("{}", val.clone()?.join(" "));
-            return Ok(val?)
+            #[cfg(feature = "espeak")]
+            {
+                let val = espeak_rs::text_to_phonemes(text, language, phoneme_separator, remove_lang_switch_flags, remove_stress);
+                //println!("{}", val.clone()?.join(" "));
+                return Ok(val?)
+            }
+            return Err(PhonemizerError::EspeakMissing);
         },
         "rustruut" | "pygoruut" => {
             let mut map = GLOBAL_PHONEMIZERS.lock().unwrap();
