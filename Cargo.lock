@@ -1806,9 +1806,9 @@ dependencies = [
 
 [[package]]
 name = "rustruut"
-version = "0.0.5"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0557fb10b6a3b1f426579bea95e29fac93cf1c0d6aee9d49c7e858bcb594c45e"
+checksum = "438b01d6bee9c59e5d84be535b4484c4b30efc32bc2100f3feaec0c58c01ed00"
 dependencies = [
  "dirs",
  "indicatif",

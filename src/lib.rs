@@ -74,10 +74,23 @@ pub fn text_to_phonemes(
         },
         "rustruut" | "pygoruut" => {
             let mut map = GLOBAL_PHONEMIZERS.lock().unwrap();
-            let phonemizer_sentence = map.entry(version.unwrap_or("".to_string()).to_string().into())
+            let phonemizer_sentence = map.entry(version.clone().unwrap_or("".to_string()).to_string().into())
                 .or_insert_with(|| {
-                    let di = rustruut::DependencyInjection::new();
-                    let phonemizer = rustruut::Phonemizer::new(di);
+                    use rustruut::{DependencyInjection, di};
+                    let phonemizer = rustruut::Phonemizer::new(
+                        if version.clone().unwrap_or_default().is_empty() {
+                            DependencyInjection::new()
+                        } else {
+                            DependencyInjection::with_parts(
+                                di::default_impls::DummyPolicy,
+                                di::default_impls::DummyIpaFlavor,
+                                di::default_impls::DummyDict,
+                                di::default_impls::DummyApi,
+                                di::custom_impls::CustomFolder,
+                                di::custom_impls::CustomVersion::new(&version.unwrap()),
+                            )
+                        }
+                    );
                     Box::new(move |req| phonemizer.sentence(req))
                         as Box<dyn Fn(rustruut::models::requests::PhonemizeSentence) -> Result<rustruut::models::responses::PhonemizeSentence, rustruut::usecases::rustruut::RustruutError> + Send + Sync>
                 });
